@@ -2141,6 +2141,7 @@ yellowthroat sp.</pre>
         <option value="prefix">Simple Prefix</option>
         <option value="levenshtein-prefix">Levenshtein Distance of Prefix</option>
         <option value="levenshtein-substring">Levenshtein Distance of Substring</option>
+        <option value="levenshtein-substring-w-prefix">Levenshtein Distance of Substring, Prefix Bonus</option>
     </select><br/>
     <select id="iterations">
         <option value="1">run once</option>
@@ -2164,15 +2165,15 @@ yellowthroat sp.</pre>
     // Steller's Jay --> [ "Steller's", "Jay" ]
     const splitRegex = /[^A-Za-z'.]+/;
     // one bird name per line, then each bird name is split into a set of component words
-    const allBirds = {};
+    const wordsSplitByBird = {};
     for (const bird of document.getElementById("birds-list").innerHTML.split("\n")) {
         const lowerBird = bird.toLocaleLowerCase();
         // split by non-alpha and also just by space (to include entire hyphenated words and words in (parens))
-        allBirds[bird] = new Set(
+        wordsSplitByBird[bird] = new Set(
             lowerBird.split(splitRegex).concat(lowerBird.split(' '))
         );
-        allBirds[bird].delete('');
-        allBirds[bird].add(lowerBird);
+        wordsSplitByBird[bird].delete('');
+        wordsSplitByBird[bird].add(lowerBird);
     }
 
     // - case-insensitive search for word prefixes
@@ -2184,8 +2185,8 @@ yellowthroat sp.</pre>
             return;
         }
         const results = [];
-        for (const bird in allBirds) {
-            for (const birdWord of allBirds[bird]) {
+        for (const bird in wordsSplitByBird) {
+            for (const birdWord of wordsSplitByBird[bird]) {
                 if (birdWord.startsWith(searchText)) {
                     results.push(bird);
                     break;
@@ -2248,8 +2249,8 @@ yellowthroat sp.</pre>
         //   results[1] = array of "matches" with levenshtein distance of 1
         const results = {};
         let dist;
-        for (const bird in allBirds) {
-            for (const birdWord of allBirds[bird]) {
+        for (const bird in wordsSplitByBird) {
+            for (const birdWord of wordsSplitByBird[bird]) {
                 dist = levenshteinDistance(searchText, birdWord.substring(0, searchText.length));
                 if (uniqueResults.size < resultsToReturn || worstDisplayedScore === -1 || dist < worstDisplayedScore) {
                     if (!results.hasOwnProperty(dist)) {
@@ -2322,7 +2323,7 @@ yellowthroat sp.</pre>
         const results = {};
         let dist;
         let bestSubstringDist;
-        for (const bird in allBirds) {
+        for (const bird in wordsSplitByBird) {
             const lowerBird = bird.toLocaleLowerCase();
             bestSubstringDist = -1;
             for (let leftOffset = 0; leftOffset < lowerBird.length; leftOffset++) {
@@ -2376,6 +2377,109 @@ yellowthroat sp.</pre>
         searchResults = orderedResults;
     }
 
+    // - same as doLevenshteinSubstringSearch, but moves a match ahead of same-
+    //     distance matches if a "word" in the bird name starts with the
+    //     search term
+    const doLevenshteinSubstringWithPrefixSearch = function(e) {
+        const searchText = textInput.value.trim().toLocaleLowerCase();
+        if (searchText.length < 1) {
+            // set global results variable
+            searchResults = [];
+            return;
+        }
+        const resultsToReturn = 16;
+        let uniqueResults = new Set();
+        let worstDisplayedScore = -1;
+        // dict of arrays: matches by score:
+        //   results[0] = array of exact matches
+        //   results[1] = array of "matches" with levenshtein distance of 1
+        const results = {};
+        let dist;
+        let bestSubstringDist;
+        for (const bird in wordsSplitByBird) {
+            const lowerBird = bird.toLocaleLowerCase();
+            bestSubstringDist = -1;
+            for (let leftOffset = 0; leftOffset < lowerBird.length; leftOffset++) {
+                dist = levenshteinDistance(searchText, lowerBird.substring(leftOffset, leftOffset + searchText.length));
+                if (bestSubstringDist === -1 || dist < bestSubstringDist) {
+                    bestSubstringDist = dist;
+                }
+                // put this check at the end of the loop, to ensure it runs at least once
+                if (leftOffset + searchText.length >= lowerBird.length) {
+                    break;
+                }
+            }
+            if (uniqueResults.size < resultsToReturn || worstDisplayedScore === -1 || bestSubstringDist < worstDisplayedScore) {
+                if (!results.hasOwnProperty(bestSubstringDist)) {
+                    results[bestSubstringDist] = [];
+                }
+                results[bestSubstringDist].push(bird);
+                //console.log("added", bird, "to results with distance", dist, "for some substring");
+                uniqueResults.add(bird);
+                if (bestSubstringDist > worstDisplayedScore) {
+                    worstDisplayedScore = bestSubstringDist;
+                }
+                if (uniqueResults.size > resultsToReturn) {
+                    let newWorstDisplayedScore = -1;
+                    uniqueResults.clear();
+                    for (let i = 0; i <= worstDisplayedScore && uniqueResults.size < resultsToReturn; i++) {
+                        if (results.hasOwnProperty(i)) {
+                            newWorstDisplayedScore = i;
+                            results[i].forEach(uniqueResults.add, uniqueResults);
+                        }
+                    }
+                    worstDisplayedScore = newWorstDisplayedScore;
+                }
+            }
+        }
+        // since we want the output ordered by best score, and the output
+        //   will be very short (10 or 20 results or so) we can just use
+        //   array.indexOf() to include only unique results
+        // we also want to put "starts with" matches ahead of other matches
+        //   with the same score
+        let substringResults = {};
+        let prefixResults = {};
+        let totalOrderedResults = 0;
+        for (let i = 0; i <= worstDisplayedScore && totalOrderedResults < resultsToReturn; i++) {
+            if (!results.hasOwnProperty(i)) {
+                continue;
+            }
+            substringResults[i] = [];
+            prefixResults[i] = [];
+            for (const match of results[i]) {
+                const scoreMatch = levDistCb.checked ? "<small>" + i + "</small>: " + match : match;
+                if (substringResults[i].indexOf(scoreMatch) == -1) {
+                    let prefixFound = false;
+                    for (const matchWord of wordsSplitByBird[match]) {
+                        if (matchWord.startsWith(searchText)) {
+                            //console.log(match, "starts with", searchText, "so moving to prefix:", i, "results");
+                            prefixResults[i].push(scoreMatch);
+                            prefixFound = true;
+                            break;
+                        }
+                    }
+                    if (!prefixFound) {
+                        substringResults[i].push(scoreMatch);
+                    }
+                }
+            }
+            totalOrderedResults += substringResults[i].length;
+            totalOrderedResults += prefixResults[i].length;
+        }
+        let finalResults = [];
+        for (let i = 0; i <= worstDisplayedScore; i++) {
+            if (!prefixResults.hasOwnProperty(i)) {
+                continue;
+            }
+            // put word prefix matches ahead of other matches
+            // thanks to https://stackoverflow.com/a/9650855/259456
+            finalResults.push.apply(finalResults, prefixResults[i]);
+            finalResults.push.apply(finalResults, substringResults[i]);
+        }
+        // set global results variable
+        searchResults = finalResults;
+    }
+
     let selectedSearchFunction = doPrefixSearch;
     let searchIterations = 1;
     // ordered results is a global variable so results don't
@@ -2388,6 +2492,8 @@ yellowthroat sp.</pre>
             selectedSearchFunction = doLevenshteinPrefixSearch;
         } else if (algoSelect.value === "levenshtein-substring") {
             selectedSearchFunction = doLevenshteinSubstringSearch;
+        } else if (algoSelect.value === "levenshtein-substring-w-prefix") {
+            selectedSearchFunction = doLevenshteinSubstringWithPrefixSearch;
         }
         iterateSearch();
     };
