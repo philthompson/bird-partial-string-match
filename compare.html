@@ -587,11 +587,19 @@ wren sp.</pre>
         <option value="levenshtein-prefix">Levenshtein Distance of Prefix</option>
         <option value="levenshtein-substring">Levenshtein Distance of Substring</option>
     </select><br/>
+    <select id="iterations">
+        <option value="1">run once</option>
+        <option value="10">run 10 times</option>
+        <option value="100">run 100 times</option>
+        <option value="1000">run 1,000 times</option>
+        <option value="10000">run 10,000 times</option>
+    </select><br/>
     <br/>
     <input id="text" width="30" style="padding: 0.25rem"/><input id="lev-score" type="checkbox" />show Levenshtein dist.
     <div id="results" style="padding-top: 1.0rem"></div>
     <script type="text/javascript">
     const algoSelect = document.getElementById("algo");
+    const iterationsSelect = document.getElementById("iterations");
     const textInput = document.getElementById("text");
     const resultsDiv = document.getElementById("results");
     const levDistCb = document.getElementById("lev-score");
@@ -616,7 +624,8 @@ wren sp.</pre>
     const doPrefixSearch = function(e) {
         const searchText = textInput.value.trim().toLocaleLowerCase();
         if (searchText.length < 1) {
-            resultsDiv.innerHTML = "";
+            // set global results variable
+            searchResults = [];
             return;
         }
         const results = [];
@@ -628,10 +637,8 @@ wren sp.</pre>
                 }
             }
         }
-        if (results.length === 0) {
-            results.push("(no results)");
-        }
-        resultsDiv.innerHTML = results.join("<br/>");
+        // set global results variable
+        searchResults = results;
     };
 
     // implemented from pseudocode at https://en.wikipedia.org/wiki/Levenshtein_distance
@@ -674,7 +681,8 @@ wren sp.</pre>
     const doLevenshteinPrefixSearch = function(e) {
         const searchText = textInput.value.trim().toLocaleLowerCase();
         if (searchText.length < 1) {
-            resultsDiv.innerHTML = "";
+            // set global results variable
+            searchResults = [];
             return;
         }
         const resultsToReturn = 16;
@@ -693,7 +701,7 @@ wren sp.</pre>
                         results[dist] = [];
                     }
                     results[dist].push(bird);
-                    console.log("added", bird, "to results with distance", dist, "for its word", birdWord);
+                    //console.log("added", bird, "to results with distance", dist, "for its word", birdWord);
                     uniqueResults.add(bird);
                     if (dist > worstDisplayedScore) {
                         worstDisplayedScore = dist;
@@ -736,7 +744,8 @@ wren sp.</pre>
                 }
             }
         }
-        resultsDiv.innerHTML = orderedResults.join("<br/>");
+        // set global results variable
+        searchResults = orderedResults;
     }
 
     // - does a levenshtein distance score for each substring in the bird name
@@ -745,7 +754,8 @@ wren sp.</pre>
     const doLevenshteinSubstringSearch = function(e) {
         const searchText = textInput.value.trim().toLocaleLowerCase();
         if (searchText.length < 1) {
-            resultsDiv.innerHTML = "";
+            // set global results variable
+            searchResults = [];
             return;
         }
         const resultsToReturn = 16;
@@ -775,7 +785,7 @@ wren sp.</pre>
                     results[bestSubstringDist] = [];
                 }
                 results[bestSubstringDist].push(bird);
-                console.log("added", bird, "to results with distance", dist, "for some substring");
+                //console.log("added", bird, "to results with distance", dist, "for some substring");
                 uniqueResults.add(bird);
                 if (bestSubstringDist > worstDisplayedScore) {
                     worstDisplayedScore = bestSubstringDist;
@@ -807,10 +817,15 @@ wren sp.</pre>
                 }
             }
         }
-        resultsDiv.innerHTML = orderedResults.join("<br/>");
+        // set global results variable
+        searchResults = orderedResults;
     }
 
     let selectedSearchFunction = doPrefixSearch;
+    let searchIterations = 1;
+    // ordered results is a global variable so results don't
+    //   have to be returned/displayed for each iteration
+    let searchResults = [];
 
     const setSearchFunction = function() {
         selectedSearchFunction = doPrefixSearch;
@@ -819,25 +834,51 @@ wren sp.</pre>
         } else if (algoSelect.value === "levenshtein-substring") {
             selectedSearchFunction = doLevenshteinSubstringSearch;
         }
-        selectedSearchFunction();
-    }
+        iterateSearch();
+    };
+
+    const setSearchIterations = function() {
+        searchIterations = parseInt(iterationsSelect.value);
+        setSearchFunction();
+    };
 
     algoSelect.addEventListener("change", setSearchFunction);
     // call it here because when the page is re-loaded, the
     //   <select> box and <input> may still contain a query
-    setSearchFunction();
+    setSearchIterations();
+
+    iterationsSelect.addEventListener("change", setSearchIterations);
+
+    function iterateSearch() {
+        resultsDiv.innerHTML = "<small>running...</small>";
+        setTimeout(iterateSearchInner, 10);
+    }
+
+    function iterateSearchInner() {
+        const timeStartMs = Date.now();
+        for (let i = 0; i < searchIterations; i++) {
+            selectedSearchFunction();
+        }
+        const timeEndMs = Date.now();
+        searchResults.unshift(
+            "<small>returned " +
+            searchResults.length.toLocaleString() + " results in " +
+            (timeEndMs - timeStartMs).toLocaleString() + "ms total for " +
+            searchIterations.toLocaleString().toLocaleString() + " iteration" + (searchIterations > 1 ? "s" : "") + "</small>")
+        resultsDiv.innerHTML = searchResults.join("<br/>");
+    }
 
     textInput.addEventListener("change", function() {
         //console.log("text change");
-        selectedSearchFunction();
+        iterateSearch();
     });
     textInput.addEventListener("input", function() {
         //console.log("text input");
-        selectedSearchFunction();
+        iterateSearch();
     });
 
     levDistCb.addEventListener("change", function(e) {
-        selectedSearchFunction();
+        iterateSearch();
     });
 
     </script>
