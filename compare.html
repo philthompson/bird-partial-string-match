@@ -2142,6 +2142,7 @@ yellowthroat sp.</pre>
         <option value="levenshtein-prefix">Levenshtein Distance of Prefix</option>
         <option value="levenshtein-substring">Levenshtein Distance of Substring</option>
         <option value="levenshtein-substring-w-prefix">Levenshtein Distance of Substring, Prefix Bonus</option>
+        <option value="levenshtein-substring-w-prefix-stopping">Levenshtein Distance of Substring, Prefix Bonus, Early Stopping</option>
     </select><br/>
     <select id="iterations">
         <option value="1">run once</option>
@@ -2229,6 +2230,45 @@ yellowthroat sp.</pre>
         }
         return dist[query.length][target.length];
     }
+    // stops early if, for some number of characters of both the query and target,
+    //   the levenshtein distance meets or exceeds the stopEarlyDistance
+    // since the levenshtein distance can never decrease as more characters
+    //   are checked (it can only stay the same if subsequence characters are
+    //   an exact match) we can stop early without checking all characters
+    const levenshteinDistanceWithStopEarly = function(query, target, stopEarlyDistance = -1) {
+        // array of arrays: dist[source-prefix][target-prefix]
+        let dist = [];
+        for (let i = 0; i < query.length+1; i++) {
+            // for each length of prefix of query, create an array of length of
+            //   the target, and fill with zeros
+            dist.push(Array(target.length+1).fill(0,0));
+        }
+        for (let i = 1; i < query.length+1; i++) {
+            dist[i][0] = i;
+        }
+        for (let j = 1; j < target.length+1; j++) {
+            dist[0][j] = j;
+        }
+        let substitutionCost;
+        for (let j = 1; j < target.length+1; j++) {
+            for (let i = 1; i < query.length+1; i++) {
+                if (query[i-1] === target[j-1]) {
+                    substitutionCost = 0;
+                } else {
+                    substitutionCost = 1;
+                }
+                dist[i][j] = Math.min(
+                    dist[i-1][j] + 1,                 // deletion
+                    dist[i][j-1] + 1,                 // insertion
+                    dist[i-1][j-1] + substitutionCost // substitution
+                );
+                if (i === j && stopEarlyDistance > -1 && dist[i][j] >= stopEarlyDistance) {
+                    return stopEarlyDistance;
+                }
+            }
+        }
+        return dist[query.length][target.length];
+    }
 
     // - does a levenshtein distance score for each word in each bird name,
     //     where the target word is truncated to a prefix of the same length
@@ -2305,7 +2345,7 @@ yellowthroat sp.</pre>
     }
 
     // - return dict of result arrays by lev. distance
-    function levenshteinSubstringSearch(searchText, resultsToReturn) {
+    function levenshteinSubstringSearch(searchText, resultsToReturn, levDistFunc, exactMatchStop) {
         if (searchText.length < 1) {
             return null;
         }
@@ -2321,12 +2361,20 @@ yellowthroat sp.</pre>
             const lowerBird = bird.toLocaleLowerCase();
             bestSubstringDist = -1;
             for (let leftOffset = 0; leftOffset < lowerBird.length; leftOffset++) {
-                dist = levenshteinDistance(searchText, lowerBird.substring(leftOffset, leftOffset + searchText.length));
+                dist = levDistFunc(
+                    searchText,
+                    lowerBird.substring(leftOffset, leftOffset + searchText.length),
+                    uniqueResults.size >= resultsToReturn ? worstDisplayedScore + 1 : -1
+                );
                 if (bestSubstringDist === -1 || dist < bestSubstringDist) {
                     bestSubstringDist = dist;
                 }
                 // put this check at the end of the loop, to ensure it runs at least once
                 if (leftOffset + searchText.length >= lowerBird.length) {
+                    break;
+                }
+                // stop checking substrings if we've got an exact match
+                if (exactMatchStop && dist === 0) {
                     break;
                 }
             }
@@ -2362,7 +2410,7 @@ yellowthroat sp.</pre>
     const doLevenshteinSubstringSearch = function() {
         const searchText = textInput.value.trim().toLocaleLowerCase();
         const resultsToReturn = 16;
-        const results = levenshteinSubstringSearch(searchText, resultsToReturn);
+        const results = levenshteinSubstringSearch(searchText, resultsToReturn, levenshteinDistance, false);
         if (results === null) {
             // set global results variable
             searchResults = [];
@@ -2389,13 +2437,10 @@ yellowthroat sp.</pre>
         searchResults = orderedResults;
     }
 
-    // - same as doLevenshteinSubstringSearch, but moves a match ahead of same-
-    //     distance matches if a "word" in the bird name starts with the
-    //     search term
-    const doLevenshteinSubstringWithPrefixSearch = function(e) {
+    function wordPrefixRewardSearch(levDistFunc, exactMatchStop) {
         const searchText = textInput.value.trim().toLocaleLowerCase();
         const resultsToReturn = 16;
-        const results = levenshteinSubstringSearch(searchText, resultsToReturn);
+        const results = levenshteinSubstringSearch(searchText, resultsToReturn, levDistFunc, exactMatchStop);
         if (results === null) {
             // set global results variable
             searchResults = [];
@@ -2452,6 +2497,20 @@ yellowthroat sp.</pre>
         searchResults = finalResults;
     }
 
+    // - same as doLevenshteinSubstringSearch, but moves a match ahead of same-
+    //     distance matches if a "word" in the bird name starts with the
+    //     search term
+    const doLevenshteinSubstringWithPrefixSearch = function(e) {
+        wordPrefixRewardSearch(levenshteinDistance, false);
+    }
+
+    // - same as doLevenshteinSubstringWithPrefixSearch, but stops early:
+    //   - if any substring is an exact match
+    //   - if the lev. distance of a substring is too large
+    const doLevenshteinSubstringWithPrefixStoppingSearch = function(e) {
+        wordPrefixRewardSearch(levenshteinDistanceWithStopEarly, true);
+    }
+
     let selectedSearchFunction = doPrefixSearch;
     let searchIterations = 1;
     // ordered results is a global variable so results don't
@@ -2466,6 +2525,8 @@ yellowthroat sp.</pre>
             selectedSearchFunction = doLevenshteinSubstringSearch;
         } else if (algoSelect.value === "levenshtein-substring-w-prefix") {
             selectedSearchFunction = doLevenshteinSubstringWithPrefixSearch;
+        } else if (algoSelect.value === "levenshtein-substring-w-prefix-stopping") {
+            selectedSearchFunction = doLevenshteinSubstringWithPrefixStoppingSearch;
         }
         iterateSearch();
     };
@@ -2484,7 +2545,7 @@ yellowthroat sp.</pre>
 
     function iterateSearch() {
         resultsDiv.innerHTML = "<small>running...</small>";
-        setTimeout(iterateSearchInner, 10);
+        setTimeout(iterateSearchInner, 50);
     }
 
     function iterateSearchInner() {
