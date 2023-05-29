@@ -2143,6 +2143,7 @@ yellowthroat sp.</pre>
         <option value="levenshtein-substring">Levenshtein Distance of Substring</option>
         <option value="levenshtein-substring-w-prefix">Levenshtein Distance of Substring, Prefix Bonus</option>
         <option value="levenshtein-substring-w-prefix-stopping">Levenshtein Distance of Substring, Prefix Bonus, Early Stopping</option>
+        <option value="levenshtein-substring-w-prefix-stopping-startswith">Levenshtein Distance of Substring, Prefix Bonus, Early Stopping, Name Starts With</option>
     </select><br/>
     <select id="iterations">
         <option value="1">run once</option>
@@ -2437,7 +2438,7 @@ yellowthroat sp.</pre>
         searchResults = orderedResults;
     }
 
-    function wordPrefixRewardSearch(levDistFunc, exactMatchStop) {
+    function wordPrefixRewardSearch(levDistFunc, exactMatchStop, rewardStartsWith) {
         const searchText = textInput.value.trim().toLocaleLowerCase();
         const resultsToReturn = 16;
         const results = levenshteinSubstringSearch(searchText, resultsToReturn, levDistFunc, exactMatchStop);
@@ -2456,6 +2457,7 @@ yellowthroat sp.</pre>
         //   with the same score
         let substringResults = {};
         let prefixResults = {};
+        let startsWithResults = {};
         let totalOrderedResults = 0;
         for (let i = 0; i <= worstDisplayedScore && totalOrderedResults < resultsToReturn; i++) {
             if (!results.hasOwnProperty(i)) {
@@ -2463,18 +2465,33 @@ yellowthroat sp.</pre>
             }
             substringResults[i] = [];
             prefixResults[i] = [];
+            startsWithResults[i] = [];
             for (const match of results[i]) {
                 const scoreMatch = levDistCb.checked ? "<small>" + i + "</small>: " + match : match;
-                if (substringResults[i].indexOf(scoreMatch) == -1) {
+                if (  substringResults[i].indexOf(scoreMatch) === -1 &&
+                      prefixResults[i].indexOf(scoreMatch) === -1 &&
+                      startsWithResults[i].indexOf(scoreMatch) === -1) {
                     let prefixFound = false;
-                    for (const matchWord of wordsSplitByBird[match]) {
-                        if (matchWord.startsWith(searchText)) {
-                            //console.log(match, "starts with", searchText, "so moving to prefix:", i, "results");
-                            prefixResults[i].push(scoreMatch);
-                            prefixFound = true;
-                            break;
+                    // if the overall bird name starts with the search term, put the match in
+                    //   that highest-ranked category of matches
+                    if (rewardStartsWith && match.toLocaleLowerCase().startsWith(searchText)) {
+                        startsWithResults[i].push(scoreMatch);
+                        prefixFound = true;
+                    // if any bird name component "word" starts with the search term, put the
+                    //   match in the middle-ranked category of matches
+                    } else {
+                        for (const matchWord of wordsSplitByBird[match]) {
+                            if (matchWord.startsWith(searchText)) {
+                                //console.log(match, "starts with", searchText, "so moving to prefix:", i, "results");
+                                prefixResults[i].push(scoreMatch);
+                                prefixFound = true;
+                                break;
+                            }
                         }
                     }
+                    // if no bird name component word starts with the search term, then
+                    //   some interior substring must be close to the search term, so
+                    //   put the match in the lowest-ranked category of matches
                     if (!prefixFound) {
                         substringResults[i].push(scoreMatch);
                     }
@@ -2482,7 +2499,10 @@ yellowthroat sp.</pre>
             }
             totalOrderedResults += substringResults[i].length;
             totalOrderedResults += prefixResults[i].length;
+            totalOrderedResults += startsWithResults[i].length;
         }
+        // put the results in order, where words starting with the search term
+        //   are placed first
         let finalResults = [];
         for (let i = 0; i <= worstDisplayedScore; i++) {
             if (!prefixResults.hasOwnProperty(i)) {
@@ -2490,8 +2510,9 @@ yellowthroat sp.</pre>
             }
             // put word prefix matches ahead of other matches
             // thanks to https://stackoverflow.com/a/9650855/259456
-            finalResults.push.apply(finalResults, prefixResults[i]);
-            finalResults.push.apply(finalResults, substringResults[i]);
+            finalResults.push.apply(finalResults, startsWithResults[i]); // overall bird name starts with search term
+            finalResults.push.apply(finalResults, prefixResults[i]); // any bird name component word starts with search term
+            finalResults.push.apply(finalResults, substringResults[i]); // any bird name interior substring is close to search term
         }
         // set global results variable
         searchResults = finalResults;
@@ -2501,14 +2522,21 @@ yellowthroat sp.</pre>
     //     distance matches if a "word" in the bird name starts with the
     //     search term
     const doLevenshteinSubstringWithPrefixSearch = function(e) {
-        wordPrefixRewardSearch(levenshteinDistance, false);
+        wordPrefixRewardSearch(levenshteinDistance, false, false);
     }
 
     // - same as doLevenshteinSubstringWithPrefixSearch, but stops early:
     //   - if any substring is an exact match
     //   - if the lev. distance of a substring is too large
     const doLevenshteinSubstringWithPrefixStoppingSearch = function(e) {
-        wordPrefixRewardSearch(levenshteinDistanceWithStopEarly, true);
+        wordPrefixRewardSearch(levenshteinDistanceWithStopEarly, true, false);
+    }
+
+    // - same as doLev...StoppingSearch, but moves matches to the front
+    //     of the results list of the overall bird name starts with the
+    //    search term
+    const doLevenshteinSubstringWithPrefixStoppingStartsWithSearch = function(e) {
+        wordPrefixRewardSearch(levenshteinDistanceWithStopEarly, true, true);
     }
 
     let selectedSearchFunction = doPrefixSearch;
@@ -2527,6 +2555,8 @@ yellowthroat sp.</pre>
             selectedSearchFunction = doLevenshteinSubstringWithPrefixSearch;
         } else if (algoSelect.value === "levenshtein-substring-w-prefix-stopping") {
             selectedSearchFunction = doLevenshteinSubstringWithPrefixStoppingSearch;
+        } else if (algoSelect.value === "levenshtein-substring-w-prefix-stopping-startswith") {
+            selectedSearchFunction = doLevenshteinSubstringWithPrefixStoppingStartsWithSearch;
         }
         iterateSearch();
     };
