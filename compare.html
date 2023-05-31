@@ -2144,6 +2144,7 @@ yellowthroat sp.</pre>
         <option value="levenshtein-substring-w-prefix">Levenshtein Distance of Substring, Prefix Bonus</option>
         <option value="levenshtein-substring-w-prefix-stopping">Levenshtein Distance of Substring, Prefix Bonus, Early Stopping</option>
         <option value="levenshtein-substring-w-prefix-stopping-startswith">Levenshtein Distance of Substring, Prefix Bonus, Early Stopping, Name Starts With</option>
+        <option value="levenshtein-substring-w-prefix-startswith">Levenshtein Distance of Substring, Prefix Bonus, Name Starts With</option>
     </select><br/>
     <select id="iterations">
         <option value="1">run once</option>
@@ -2543,6 +2544,13 @@ yellowthroat sp.</pre>
         wordPrefixRewardSearch(levenshteinDistanceWithStopEarly, true, true);
     }
 
+    // - same as doLev...PrefixSearch, but moves matches to the front
+    //     of the results list of the overall bird name starts with the
+    //    search term (no early stopping)
+    const doLevenshteinSubstringWithPrefixStartsWithSearch = function(e) {
+        wordPrefixRewardSearch(levenshteinDistance, false, true);
+    }
+
     let selectedSearchFunction = doPrefixSearch;
     let searchIterations = 1;
     // ordered results is a global variable so results don't
@@ -2561,6 +2569,8 @@ yellowthroat sp.</pre>
             selectedSearchFunction = doLevenshteinSubstringWithPrefixStoppingSearch;
         } else if (algoSelect.value === "levenshtein-substring-w-prefix-stopping-startswith") {
             selectedSearchFunction = doLevenshteinSubstringWithPrefixStoppingStartsWithSearch;
+        } else if (algoSelect.value === "levenshtein-substring-w-prefix-startswith") {
+            selectedSearchFunction = doLevenshteinSubstringWithPrefixStartsWithSearch;
         }
         iterateSearch();
     };
