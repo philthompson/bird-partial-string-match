@@ -2236,7 +2236,7 @@ yellowthroat sp.</pre>
     // since the levenshtein distance can never decrease as more characters
     //   are checked (it can only stay the same if subsequence characters are
     //   an exact match) we can stop early without checking all characters
-    const levenshteinDistanceWithStopEarly = function(query, target, stopEarlyDistance = -1) {
+    const levenshteinDistanceWithStopEarly = function(query, target, stopEarlyDistance = 999) {
         // array of arrays: dist[source-prefix][target-prefix]
         let dist = [];
         for (let i = 0; i < query.length+1; i++) {
@@ -2263,7 +2263,7 @@ yellowthroat sp.</pre>
                     dist[i][j-1] + 1,                 // insertion
                     dist[i-1][j-1] + substitutionCost // substitution
                 );
-                if (i === j && stopEarlyDistance > -1 && dist[i][j] >= stopEarlyDistance) {
+                if (i === j && dist[i][j] >= stopEarlyDistance) {
                     return stopEarlyDistance;
                 }
             }
@@ -2365,7 +2365,7 @@ yellowthroat sp.</pre>
                 dist = levDistFunc(
                     searchText,
                     lowerBird.substring(leftOffset, leftOffset + searchText.length),
-                    uniqueResults.size >= resultsToReturn ? worstDisplayedScore + 1 : -1
+                    uniqueResults.size >= resultsToReturn ? worstDisplayedScore + 1 : 999
                 );
                 if (bestSubstringDist === -1 || dist < bestSubstringDist) {
                     bestSubstringDist = dist;
@@ -2379,26 +2379,30 @@ yellowthroat sp.</pre>
                     break;
                 }
             }
-            if (uniqueResults.size < resultsToReturn || worstDisplayedScore === -1 || bestSubstringDist < worstDisplayedScore) {
+            if (worstDisplayedScore === -1 || bestSubstringDist <= worstDisplayedScore) {
                 if (!results.hasOwnProperty(bestSubstringDist)) {
                     results[bestSubstringDist] = [];
                 }
                 results[bestSubstringDist].push(bird);
                 //console.log("added", bird, "to results with distance", dist, "for some substring");
-                uniqueResults.add(bird);
-                if (bestSubstringDist > worstDisplayedScore) {
-                    worstDisplayedScore = bestSubstringDist;
-                }
-                if (uniqueResults.size > resultsToReturn) {
-                    let newWorstDisplayedScore = -1;
-                    uniqueResults.clear();
-                    for (let i = 0; i <= worstDisplayedScore && uniqueResults.size < resultsToReturn; i++) {
-                        if (results.hasOwnProperty(i)) {
-                            newWorstDisplayedScore = i;
-                            results[i].forEach(uniqueResults.add, uniqueResults);
-                        }
+                // track the "cutoff lev. dist." by counting unique results with
+                //   each score, until we get to the desired number of results
+                if (worstDisplayedScore > 0) {
+                    uniqueResults.add(bird);
+                    if (bestSubstringDist > worstDisplayedScore) {
+                        worstDisplayedScore = bestSubstringDist;
                     }
-                    worstDisplayedScore = newWorstDisplayedScore;
+                    if (uniqueResults.size > resultsToReturn) {
+                        let newWorstDisplayedScore = -1;
+                        uniqueResults.clear();
+                        for (let i = 0; i <= worstDisplayedScore && uniqueResults.size < resultsToReturn; i++) {
+                            if (results.hasOwnProperty(i)) {
+                                newWorstDisplayedScore = i;
+                                results[i].forEach(uniqueResults.add, uniqueResults);
+                            }
+                        }
+                        worstDisplayedScore = newWorstDisplayedScore;
+                    }
                 }
             }
         }
