@@ -2347,7 +2347,7 @@ yellowthroat sp.</pre>
     }
 
     // - return dict of result arrays by lev. distance
-    function levenshteinSubstringSearch(searchText, resultsToReturn, levDistFunc, exactMatchStop) {
+    function levenshteinSubstringSearchOld(searchText, resultsToReturn, levDistFunc, exactMatchStop) {
         if (searchText.length < 1) {
             return null;
         }
@@ -2376,9 +2376,12 @@ yellowthroat sp.</pre>
                     break;
                 }
                 // stop checking substrings if we've got an exact match
-                if (exactMatchStop && dist === 0) {
-                    break;
-                }
+                //   (most birds will not have an exact match in a substring
+                //     near the beginning of the word, so performing this
+                //     check actually slows things down)
+                //if (exactMatchStop && dist === 0) {
+                //    break;
+                //}
             }
             if (worstDisplayedScore === -1 || bestSubstringDist <= worstDisplayedScore) {
                 if (!results.hasOwnProperty(bestSubstringDist)) {
@@ -2404,6 +2407,93 @@ yellowthroat sp.</pre>
                         }
                         worstDisplayedScore = newWorstDisplayedScore;
                     }
+                }
+            }
+        }
+        return results;
+    }
+    function levenshteinSubstringSearch(searchText, resultsToReturn, levDistFunc, exactMatchStop) {
+        if (searchText.length < 1) {
+            return null;
+        }
+        let worstDisplayedScore = -1;
+        let resultsCount = 0;
+        // dict of arrays: matches by score:
+        //   results[0] = array of exact matches
+        //   results[1] = array of "matches" with levenshtein distance of 1
+        const results = {};
+        let dist;
+        let bestSubstringDist;
+        let onlyLookForExactMatch = false;
+        for (const bird in wordsSplitByBird) {
+            const lowerBird = bird.toLocaleLowerCase();
+            bestSubstringDist = -1;
+            if (onlyLookForExactMatch) {
+                // once we've found enough exact substring matches, we can
+                //   use indexOf() instead of Levenshtein distance, which
+                //   should be faster
+                if (lowerBird.indexOf(searchText) === -1) {
+                    bestSubstringDist = 999;
+                } else {
+                    bestSubstringDist = 0;
+                }
+            } else {
+                for (let leftOffset = 0; leftOffset < lowerBird.length; leftOffset++) {
+                    dist = levDistFunc(
+                        searchText,
+                        lowerBird.substring(leftOffset, leftOffset + searchText.length),
+                        //999
+                        resultsCount >= resultsToReturn ? worstDisplayedScore + 1 : 999
+                    );
+                    if (bestSubstringDist === -1 || dist < bestSubstringDist) {
+                        bestSubstringDist = dist;
+                    }
+                    // put this check at the end of the loop, to ensure it runs at least once
+                    if (leftOffset + searchText.length >= lowerBird.length) {
+                        break;
+                    }
+                    // stop checking substrings if we've got an exact match
+                    //   (most birds will not have an exact match in a substring
+                    //     near the beginning of the word, so performing this
+                    //     check actually slows things down)
+                    //if (dist === 0) {
+                    //    break;
+                    //}
+                }
+            }
+            if (bestSubstringDist <= worstDisplayedScore || resultsCount < resultsToReturn) {
+                if (!results.hasOwnProperty(bestSubstringDist)) {
+                    results[bestSubstringDist] = [];
+                    if (worstDisplayedScore === -1) {
+                        worstDisplayedScore = bestSubstringDist;
+                    }
+                }
+                results[bestSubstringDist].push(bird);
+                // if this bird's best substring lev. dist. is tied for the
+                //   worst displayed distance, we can just increment the
+                //   results count
+                // otherwise, we need to check if we have enough better results
+                //   to lower the worst displayed distance
+                if (bestSubstringDist === worstDisplayedScore) {
+                    resultsCount++;
+                } else {
+                    let newWorstDisplayedScore = -1;
+                    resultsCount = 0;
+                    for (let i = 0; i <= worstDisplayedScore && resultsCount < resultsToReturn; i++) {
+                        if (!results.hasOwnProperty(i)) {
+                            continue;
+                        }
+                        newWorstDisplayedScore = i;
+                        resultsCount += results[i].length;
+                    }
+                    worstDisplayedScore = newWorstDisplayedScore;
+                }
+                // if we've already got enough 0-dist results, we don't
+                //   need to continue checking Levenshtein distance for all
+                //   substrings, and can instead use indexOf()
+                if (!onlyLookForExactMatch && worstDisplayedScore === 0 && resultsCount >= resultsToReturn) {
+                //    //console.log("at dist=0, we already have", resultsCount, "results (more than", resultsToReturn, ") so we are stopping");
+                    onlyLookForExactMatch = true;
                 }
             }
         }
