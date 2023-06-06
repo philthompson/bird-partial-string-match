@@ -2472,19 +2472,25 @@ yellowthroat sp.</pre>
                 // if this bird's best substring lev. dist. is tied for the
                 //   worst displayed distance, we can just increment the
                 //   results count
-                // otherwise, we need to check if we have enough better results
-                //   to lower the worst displayed distance
                 if (bestSubstringDist === worstDisplayedScore) {
                     resultsCount++;
+                // otherwise, we need to check if we have enough better results
+                //   to lower the worst displayed distance (and drop any now
+                //   disqualified results with a too-large lev. dist.)
                 } else {
                     let newWorstDisplayedScore = -1;
                     resultsCount = 0;
-                    for (let i = 0; i <= worstDisplayedScore && resultsCount < resultsToReturn; i++) {
+                    const worstResultsScore = Object.keys(results).sort().pop();
+                    for (let i = 0; i <= worstResultsScore; i++) {
                         if (!results.hasOwnProperty(i)) {
                             continue;
                         }
-                        newWorstDisplayedScore = i;
-                        resultsCount += results[i].length;
+                        if (resultsCount <= resultsToReturn) {
+                            newWorstDisplayedScore = i;
+                            resultsCount += results[i].length;
+                        } else {
+                            delete results[i];
+                        }
                     }
                     worstDisplayedScore = newWorstDisplayedScore;
                 }
