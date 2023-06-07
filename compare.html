@@ -2145,6 +2145,7 @@ yellowthroat sp.</pre>
         <option value="levenshtein-substring-w-prefix-stopping">Levenshtein Distance of Substring, Prefix Bonus, Early Stopping</option>
         <option value="levenshtein-substring-w-prefix-stopping-startswith">Levenshtein Distance of Substring, Prefix Bonus, Early Stopping, Name Starts With</option>
         <option value="levenshtein-substring-w-prefix-startswith">Levenshtein Distance of Substring, Prefix Bonus, Name Starts With</option>
+        <option value="levenshtein-substring-w-prefix-startswith-wholeword">Levenshtein Distance of Substring with Early Stopping and Bonuses For Prefix, Name Starts With, Whole Word</option>
     </select><br/>
     <select id="iterations">
         <option value="1">run once</option>
@@ -2647,6 +2648,97 @@ yellowthroat sp.</pre>
         wordPrefixRewardSearch(levenshteinDistance, false, true);
     }
 
+    const doLevenshteinSubstringWithPrefixStartsWithWholeWordSearch = function(e) {
+        //const levDistFunc = levenshteinDistance;
+        const levDistFunc = levenshteinDistanceWithStopEarly;
+        const searchText = textInput.value.trim().toLocaleLowerCase();
+        const resultsToReturn = 16;
+        const birdsByBestSubstringDist = levenshteinSubstringSearch(searchText, resultsToReturn, levDistFunc, false);
+        if (birdsByBestSubstringDist === null) {
+            // set global results variable
+            searchResults = [];
+            return;
+        }
+
+        // check for component word prefixes, and whole word prefixes, for the substring matches
+        const bonusAdjustedResults = {};
+        let bestAdjustedScore = 999;
+        let worstAdjustedScore = -1;
+        for (const bestSubstringDistStr in birdsByBestSubstringDist) {
+            const bestSubstringDist = parseInt(bestSubstringDistStr);
+            let birdAdjustedDist;
+            if (bestSubstringDist > worstAdjustedScore) {
+                worstAdjustedScore = bestSubstringDist;
+            }
+            for (const birdName of birdsByBestSubstringDist[bestSubstringDist]) {
+                console.log(birdName, "has unadjusted dist of", bestSubstringDist);
+                birdAdjustedDist = bestSubstringDist;
+                // search for a whole component word that has a Levenshtein distance
+                //   that's the same as the "best" substring, and if one is found,
+                //   lower the adjusted distance to provide a sorting bonus
+                for (const birdWord of wordsSplitByBird[birdName]) {
+                    console.log("checking whole word match for", birdWord, "against search term of", searchText);
+                    if (levenshteinDistance(searchText, birdWord) === bestSubstringDist) {
+                        console.log("whole word [" + birdWord + "] of", birdName, "has lev. dist.", bestSubstringDist, ", so it gets a bonus");
+                        birdAdjustedDist--;
+                        break;
+                    }
+                }
+                // only do substring bonus if whole word bonus doesn't apply
+                //if (birdAdjustedDist === bestSubstringDist) {
+                // search for a component word prefix that has a Levenshtein distance
+                //   that's the same as the "best" substring, and if one is found,
+                //   lower the adjusted distance to provide a sorting bonus
+                for (const birdWord of wordsSplitByBird[birdName]) {
+                    if (levenshteinDistance(searchText, birdWord.substring(0, searchText.length)) === bestSubstringDist) {
+                        console.log("[" + birdWord + "] of", birdName, "starts with lev. dist.", bestSubstringDist, "substring, so it gets a bonus");
+                        birdAdjustedDist--;
+                        break;
+                    }
+                }
+                //}
+                // if the overall bird name starts with a substring that has a
+                //   Levenshtein distance that's the same as the "best" substring,
+                //   lower the adjusted distance to provide a sorting bonus
+                if (levenshteinDistance(searchText, birdName.toLocaleLowerCase().substring(0, searchText.length)) === bestSubstringDist) {
+                    console.log("overall name [" + birdName + "] starts with lev. dist.", bestSubstringDist, "substring, so it gets a bonus");
+                    birdAdjustedDist--;
+                }
+                // if the overall bird name ends with " sp." then add one to the
+                //   adjusted distance (so "sp." are not placed ahead of non-"sp."
+                //   results that would otherwise have the same score
+                if (birdName.endsWith(" sp.")) {
+                    birdAdjustedDist++;
+                }
+
+                if (!bonusAdjustedResults.hasOwnProperty(birdAdjustedDist)) {
+                    bonusAdjustedResults[birdAdjustedDist] = [];
+                }
+                //const scoreMatch = levDistCb.checked ? "<small>" + i + "</small>: " + match : match;
+                if (levDistCb.checked) {
+                    bonusAdjustedResults[birdAdjustedDist].push("<small>" + birdAdjustedDist + "</small>: " + birdName);
+                } else {
+                    bonusAdjustedResults[birdAdjustedDist].push(birdName);
+                }
+                if (birdAdjustedDist < bestAdjustedScore) {
+                    bestAdjustedScore = birdAdjustedDist;
+                }
+            }
+        }
+        // put the results in order by adjusted distance score
+        let finalResults = [];
+        for (let i = bestAdjustedScore; i <= worstAdjustedScore; i++) {
+            if (!bonusAdjustedResults.hasOwnProperty(i)) {
+                continue;
+            }
+            // concat array contents
+            // thanks to https://stackoverflow.com/a/9650855/259456
+            finalResults.push.apply(finalResults, bonusAdjustedResults[i]);
+        }
+        // set global results variable
+        searchResults = finalResults;
+    }
+
     let selectedSearchFunction = doPrefixSearch;
     let searchIterations = 1;
     // ordered results is a global variable so results don't
@@ -2667,6 +2759,8 @@ yellowthroat sp.</pre>
             selectedSearchFunction = doLevenshteinSubstringWithPrefixStoppingStartsWithSearch;
         } else if (algoSelect.value === "levenshtein-substring-w-prefix-startswith") {
             selectedSearchFunction = doLevenshteinSubstringWithPrefixStartsWithSearch;
+        } else if (algoSelect.value === "levenshtein-substring-w-prefix-startswith-wholeword") {
+            selectedSearchFunction = doLevenshteinSubstringWithPrefixStartsWithWholeWordSearch;
         }
         iterateSearch();
     };
