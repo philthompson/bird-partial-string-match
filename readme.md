@@ -2,6 +2,8 @@ I was inspired to tinker with partial string match algorithms by the eBird mobil
 
 I created simple HTML pages to experiment with and compare algorithms in JavaScript.
 
+More discussion of this work has been posted to [my blog](https://philthompson.me/2023/Partial-String-Match-for-Birds.html).
+
 ### Search Page
 
 The `search.html` page runs the final algorithm.  It can be viewed [here](https://philthompson.me/misc/partial-string-match-for-birds/search.html).
