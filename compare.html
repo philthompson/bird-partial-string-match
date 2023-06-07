@@ -2146,6 +2146,7 @@ yellowthroat sp.</pre>
         <option value="levenshtein-substring-w-prefix-stopping-startswith">Levenshtein Distance of Substring, Prefix Bonus, Early Stopping, Name Starts With</option>
         <option value="levenshtein-substring-w-prefix-startswith">Levenshtein Distance of Substring, Prefix Bonus, Name Starts With</option>
         <option value="levenshtein-substring-w-prefix-startswith-wholeword">Levenshtein Distance of Substring with Early Stopping and Bonuses For Prefix, Name Starts With, Whole Word</option>
+        <option value="levenshtein-substring-w-prefix-startswith-wholeword-multi">Levenshtein Distance of Substring with Early Stopping and Bonuses For Prefix, Name Starts With, Whole Word, Multi</option>
     </select><br/>
     <select id="iterations">
         <option value="1">run once</option>
@@ -2648,16 +2649,114 @@ yellowthroat sp.</pre>
         wordPrefixRewardSearch(levenshteinDistance, false, true);
     }
 
+    function displayAdjustedResultsInOrder(bestAdjustedScore, worstAdjustedScore, bonusAdjustedResults) {
+        // put the results in order by adjusted distance score
+        let finalResults = [];
+        for (let i = bestAdjustedScore; i <= worstAdjustedScore; i++) {
+            if (!bonusAdjustedResults.hasOwnProperty(i)) {
+                continue;
+            }
+            // concat array contents
+            // thanks to https://stackoverflow.com/a/9650855/259456
+            if (levDistCb.checked) {
+                finalResults.push.apply(finalResults, bonusAdjustedResults[i].map(x => "<small>" + i + "</small>: " + x));
+            } else {
+                finalResults.push.apply(finalResults, bonusAdjustedResults[i]);
+            }
+        }
+        // set global results variable
+        searchResults = finalResults;
+    }
+
     const doLevenshteinSubstringWithPrefixStartsWithWholeWordSearch = function(e) {
-        //const levDistFunc = levenshteinDistance;
-        const levDistFunc = levenshteinDistanceWithStopEarly;
         const searchText = textInput.value.trim().toLocaleLowerCase();
         const resultsToReturn = 16;
-        const birdsByBestSubstringDist = levenshteinSubstringSearch(searchText, resultsToReturn, levDistFunc, false);
-        if (birdsByBestSubstringDist === null) {
+        const adjResults = singleSearchTermSubstringWithAdjustents(searchText, resultsToReturn);
+        if (adjResults === null) {
             // set global results variable
             searchResults = [];
             return;
+        }
+        displayAdjustedResultsInOrder(adjResults.bestAdjustedScore, adjResults.worstAdjustedScore, adjResults.bonusAdjustedResults);
+    };
+
+    const doLevenshteinSubstringWithPrefixStartsWithWholeWordSearchMulti = function(e) {
+        // split the search term into separate words
+        const searchSplit = textInput.value.trim().toLocaleLowerCase().split(splitRegex);
+        const resultsToReturn = 16;
+        
+        const scoreSumByBird = {};
+        let resultsFound = false;
+        for (const searchText of searchSplit) {
+            const adjResults = singleSearchTermSubstringWithAdjustents(searchText, resultsToReturn);
+            if (adjResults === null) {
+                continue;
+            }
+            resultsFound = true;
+            for (let adjDist = adjResults.bestAdjustedScore; adjDist <= adjResults.worstAdjustedScore; adjDist++) {
+                if (!adjResults.bonusAdjustedResults.hasOwnProperty(adjDist)) {
+                    continue;
+                }
+                for (const bird of adjResults.bonusAdjustedResults[adjDist]) {
+                    if (!scoreSumByBird.hasOwnProperty(bird)) {
+                        scoreSumByBird[bird] = parseInt(adjDist);
+                        //console.log(searchText, "->", bird, "starting sum with [", adjDist, "]");
+                    } else {
+                        scoreSumByBird[bird] += parseInt(adjDist);
+                        //console.log(searchText, "->", bird, "adding to sum with [", adjDist, "] for new sum [", scoreSumByBird[bird], "]");
+                    }
+                }
+            }
+        }
+        // if we had no results, return early
+        if (!resultsFound) {
+            // set global results variable
+            searchResults = [];
+            return;
+        }
+        const summedResults = {};
+        let bestAdjustedScore = 999;
+        let worstAdjustedScore = -1;
+        let birdAdjDist;
+        for (const bird in scoreSumByBird) {
+            birdAdjDist = scoreSumByBird[bird];
+            if (birdAdjDist < bestAdjustedScore) {
+                bestAdjustedScore = birdAdjDist;
+            }
+            if (birdAdjDist > worstAdjustedScore) {
+                worstAdjustedScore = birdAdjDist;
+            }
+            if (!summedResults.hasOwnProperty(birdAdjDist)) {
+                summedResults[birdAdjDist] = [];
+            }
+            summedResults[birdAdjDist].push(bird);
+        }
+        // sort each score's birds array
+        let resultsCount = 0;
+        let truncatedWorstAdjustedScore = bestAdjustedScore;
+        for (let i = bestAdjustedScore; i <= worstAdjustedScore; i++) {
+            if (!summedResults.hasOwnProperty(i)) {
+                continue;
+            }
+            if (resultsCount < resultsToReturn) {
+                summedResults[i].sort();
+                resultsCount += summedResults[i].length;
+                //console.log("including birds with summed score of", i, "we have", resultsCount, "results");
+                truncatedWorstAdjustedScore = i;
+            } else {
+                delete summedResults[i];
+            }
+        }
+
+        displayAdjustedResultsInOrder(bestAdjustedScore, truncatedWorstAdjustedScore, summedResults);
+    };
+
+    function singleSearchTermSubstringWithAdjustents(searchText, resultsToReturn) {
+        //const levDistFunc = levenshteinDistance;
+        const levDistFunc = levenshteinDistanceWithStopEarly;
+        const birdsByBestSubstringDist = levenshteinSubstringSearch(searchText, resultsToReturn, levDistFunc, false);
+        if (birdsByBestSubstringDist === null) {
+            return null;
         }
 
         // check for component word prefixes, and whole word prefixes, for the substring matches
@@ -2671,15 +2770,15 @@ yellowthroat sp.</pre>
                 worstAdjustedScore = bestSubstringDist;
             }
             for (const birdName of birdsByBestSubstringDist[bestSubstringDist]) {
-                console.log(birdName, "has unadjusted dist of", bestSubstringDist);
+                //console.log(birdName, "has unadjusted dist of", bestSubstringDist);
                 birdAdjustedDist = bestSubstringDist;
                 // search for a whole component word that has a Levenshtein distance
                 //   that's the same as the "best" substring, and if one is found,
                 //   lower the adjusted distance to provide a sorting bonus
                 for (const birdWord of wordsSplitByBird[birdName]) {
-                    console.log("checking whole word match for", birdWord, "against search term of", searchText);
+                    //console.log("checking whole word match for", birdWord, "against search term of", searchText);
                     if (levenshteinDistance(searchText, birdWord) === bestSubstringDist) {
-                        console.log("whole word [" + birdWord + "] of", birdName, "has lev. dist.", bestSubstringDist, ", so it gets a bonus");
+                        //console.log("whole word [" + birdWord + "] of", birdName, "has lev. dist.", bestSubstringDist, ", so it gets a bonus");
                         birdAdjustedDist--;
                         break;
                     }
@@ -2691,7 +2790,7 @@ yellowthroat sp.</pre>
                 //   lower the adjusted distance to provide a sorting bonus
                 for (const birdWord of wordsSplitByBird[birdName]) {
                     if (levenshteinDistance(searchText, birdWord.substring(0, searchText.length)) === bestSubstringDist) {
-                        console.log("[" + birdWord + "] of", birdName, "starts with lev. dist.", bestSubstringDist, "substring, so it gets a bonus");
+                        //console.log("[" + birdWord + "] of", birdName, "starts with lev. dist.", bestSubstringDist, "substring, so it gets a bonus");
                         birdAdjustedDist--;
                         break;
                     }
@@ -2701,7 +2800,7 @@ yellowthroat sp.</pre>
                 //   Levenshtein distance that's the same as the "best" substring,
                 //   lower the adjusted distance to provide a sorting bonus
                 if (levenshteinDistance(searchText, birdName.toLocaleLowerCase().substring(0, searchText.length)) === bestSubstringDist) {
-                    console.log("overall name [" + birdName + "] starts with lev. dist.", bestSubstringDist, "substring, so it gets a bonus");
+                    //console.log("overall name [" + birdName + "] starts with lev. dist.", bestSubstringDist, "substring, so it gets a bonus");
                     birdAdjustedDist--;
                 }
                 // if the overall bird name ends with " sp." then add one to the
@@ -2714,29 +2813,17 @@ yellowthroat sp.</pre>
                 if (!bonusAdjustedResults.hasOwnProperty(birdAdjustedDist)) {
                     bonusAdjustedResults[birdAdjustedDist] = [];
                 }
-                //const scoreMatch = levDistCb.checked ? "<small>" + i + "</small>: " + match : match;
-                if (levDistCb.checked) {
-                    bonusAdjustedResults[birdAdjustedDist].push("<small>" + birdAdjustedDist + "</small>: " + birdName);
-                } else {
-                    bonusAdjustedResults[birdAdjustedDist].push(birdName);
-                }
+                bonusAdjustedResults[birdAdjustedDist].push(birdName);
                 if (birdAdjustedDist < bestAdjustedScore) {
                     bestAdjustedScore = birdAdjustedDist;
                 }
             }
         }
-        // put the results in order by adjusted distance score
-        let finalResults = [];
-        for (let i = bestAdjustedScore; i <= worstAdjustedScore; i++) {
-            if (!bonusAdjustedResults.hasOwnProperty(i)) {
-                continue;
-            }
-            // concat array contents
-            // thanks to https://stackoverflow.com/a/9650855/259456
-            finalResults.push.apply(finalResults, bonusAdjustedResults[i]);
-        }
-        // set global results variable
-        searchResults = finalResults;
+        return {
+            bestAdjustedScore: bestAdjustedScore,
+            worstAdjustedScore: worstAdjustedScore,
+            bonusAdjustedResults: bonusAdjustedResults
+        };
     }
 
     let selectedSearchFunction = doPrefixSearch;
@@ -2761,6 +2848,8 @@ yellowthroat sp.</pre>
             selectedSearchFunction = doLevenshteinSubstringWithPrefixStartsWithSearch;
         } else if (algoSelect.value === "levenshtein-substring-w-prefix-startswith-wholeword") {
             selectedSearchFunction = doLevenshteinSubstringWithPrefixStartsWithWholeWordSearch;
+        } else if (algoSelect.value === "levenshtein-substring-w-prefix-startswith-wholeword-multi") {
+            selectedSearchFunction = doLevenshteinSubstringWithPrefixStartsWithWholeWordSearchMulti;
         }
         iterateSearch();
     };
